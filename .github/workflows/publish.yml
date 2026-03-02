@@ -20,7 +20,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --features python --find-interpreter
+          args: --release --out dist --features python --interpreter python3.9 python3.10 python3.11 python3.12 python3.13
           manylinux: auto  # builds manylinux_2_17 wheels (broadest compatibility)
 
       - uses: actions/upload-artifact@v4
@@ -39,7 +39,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --features python --find-interpreter --target universal2-apple-darwin
+          args: --release --out dist --features python --interpreter python3.9 python3.10 python3.11 python3.12 python3.13 --target universal2-apple-darwin
 
       - uses: actions/upload-artifact@v4
         with:
