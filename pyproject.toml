@@ -1,0 +1,16 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "cadl85"
+version = "0.1.0"
+description = "Complete Anytime Decision Tree Learning"
+requires-python = ">=3.8"
+dependencies = ["numpy"]
+
+[tool.maturin]
+features = ["python"]
+# Rust extension lives at cadl85._cadl85 (internal); public API is in python/cadl85/__init__.py
+module-name = "cadl85._cadl85"
+python-source = "python"
