@@ -79,6 +79,10 @@ class CADL85:
         ``num_attributes``, ``num_samples``.
     n_features_in_ : int
         Number of features seen during ``fit``.
+    history_ : pandas.DataFrame
+        Optimization history across restarts (one row per restart), with columns
+        ``"elapsed_time"``, ``"error"``, ``"restart"``, ``"cache_size"``,
+        ``"search_space_size"``.
     """
 
     def __init__(
@@ -166,6 +170,23 @@ class CADL85:
     def n_features_in_(self) -> int:
         """Number of features seen during fit."""
         return self._model.n_features_in_
+
+    @property
+    def history_(self):
+        """Optimization history across restarts as a pandas DataFrame.
+
+        Columns:
+          ``elapsed_time``       – elapsed seconds since ``fit()`` was called
+          ``error``              – training misclassification rate (fraction)
+          ``restart``            – restart number (1-indexed)
+          ``cache_size``         – number of cached subproblems at this point
+          ``search_space_size``  – cumulative nodes explored at this point
+
+        If the search completes in a single pass (e.g. small depth/dataset),
+        the DataFrame will have exactly one row.
+        """
+        import pandas as pd
+        return pd.DataFrame(self._model.history_)
 
     # ------------------------------------------------------------------
     # Dunder helpers

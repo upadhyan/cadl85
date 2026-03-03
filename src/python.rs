@@ -1,11 +1,12 @@
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 
 use crate::algorithms::common::errors::NativeError;
 use crate::algorithms::common::heuristics::{GiniIndex, InformationGain, NoHeuristic};
-use crate::algorithms::common::types::{OptimalDepth2Policy, SearchStatistics};
+use crate::algorithms::common::types::{OptimalDepth2Policy, SearchResult, SearchStatistics};
+use crate::algorithms::optimal::Reason;
 use crate::algorithms::optimal::depth2::ErrorMinimizer;
 use crate::algorithms::optimal::dl85::DL85Builder;
 use crate::algorithms::TreeSearchAlgorithm;
@@ -67,7 +68,7 @@ fn predict_one(tree: &Tree, sample: &[i64], label_map: &[i64]) -> i64 {
 }
 
 macro_rules! run_dl85 {
-    ($cover:expr, $max_depth:expr, $min_support:expr, $timeout:expr, $heuristic:expr) => {{
+    ($cover:expr, $n_samples:expr, $max_depth:expr, $min_support:expr, $timeout:expr, $heuristic:expr) => {{
         let error_fn = Box::<NativeError>::default();
         let depth2 = Box::new(ErrorMinimizer::new(error_fn.clone()));
         let mut algo = DL85Builder::default()
@@ -81,11 +82,26 @@ macro_rules! run_dl85 {
             .error_function(error_fn)
             .build()
             .map_err(PyRuntimeError::new_err)?;
-        algo.fit($cover)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut history: Vec<[f64; 5]> = Vec::new();
+        let n = $n_samples as f64;
+        let mut result = SearchResult::default();
+        result.reason = Reason::RuleReason;
+        while result.reason == Reason::RuleReason && !algo.time_is_exhausted() {
+            result = algo.partial_fit($cover);
+            let s = algo.statistics();
+            history.push([
+                s.duration,
+                if n > 0.0 { s.tree_error / n } else { 0.0 },
+                s.restarts as f64,
+                s.cache_size as f64,
+                s.search_space_size as f64,
+            ]);
+        }
+
         let tree = algo.tree().clone();
         let stats = algo.statistics().clone();
-        (tree, stats)
+        (tree, stats, history)
     }};
 }
 
@@ -102,6 +118,7 @@ pub struct PyCadl85 {
     // Populated after fit()
     tree: Option<Tree>,
     statistics: Option<SearchStatistics>,
+    history: Vec<[f64; 5]>, // [timestamp, error_frac, restart_n, cache_size, search_space_size]
     label_map: Vec<i64>,
     n_features_in: usize,
     n_samples: usize,
@@ -119,6 +136,7 @@ impl PyCadl85 {
             heuristic: heuristic.to_string(),
             tree: None,
             statistics: None,
+            history: Vec::new(),
             label_map: vec![],
             n_features_in: 0,
             n_samples: 0,
@@ -150,9 +168,10 @@ impl PyCadl85 {
         self.n_features_in = x_arr.ncols();
         self.n_samples = x_arr.nrows();
 
-        let (tree, stats) = match self.heuristic.as_str() {
+        let (tree, stats, history) = match self.heuristic.as_str() {
             "gini_index" | "gini" => run_dl85!(
                 &mut cover,
+                self.n_samples,
                 self.max_depth,
                 self.min_support,
                 self.timeout,
@@ -160,6 +179,7 @@ impl PyCadl85 {
             ),
             "none" => run_dl85!(
                 &mut cover,
+                self.n_samples,
                 self.max_depth,
                 self.min_support,
                 self.timeout,
@@ -167,6 +187,7 @@ impl PyCadl85 {
             ),
             _ => run_dl85!(
                 &mut cover,
+                self.n_samples,
                 self.max_depth,
                 self.min_support,
                 self.timeout,
@@ -176,6 +197,7 @@ impl PyCadl85 {
 
         self.tree = Some(tree);
         self.statistics = Some(stats);
+        self.history = history;
         self.label_map = label_map;
 
         Ok(py.None())
@@ -258,6 +280,29 @@ impl PyCadl85 {
         dict.set_item("num_attributes", stats.num_attributes)?;
         dict.set_item("num_samples", stats.num_samples)?;
         Ok(dict.into())
+    }
+
+    /// Optimization history: one dict per restart, in chronological order.
+    ///
+    /// Keys per entry:
+    ///   "elapsed_time"       - elapsed seconds since fit() was called
+    ///   "error"              - training misclassification rate (fraction)
+    ///   "restart"            - restart number (1-indexed)
+    ///   "cache_size"         - number of cached subproblems at this point
+    ///   "search_space_size"  - cumulative nodes explored at this point
+    #[getter]
+    fn history_(&self, py: Python) -> PyResult<PyObject> {
+        let list = PyList::empty(py);
+        for entry in &self.history {
+            let dict = PyDict::new(py);
+            dict.set_item("elapsed_time", entry[0])?;
+            dict.set_item("error", entry[1])?;
+            dict.set_item("restart", entry[2] as usize)?;
+            dict.set_item("cache_size", entry[3] as usize)?;
+            dict.set_item("search_space_size", entry[4] as usize)?;
+            list.append(dict)?;
+        }
+        Ok(list.into())
     }
 
     /// Number of features seen during fit.

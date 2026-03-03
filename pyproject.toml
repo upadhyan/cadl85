@@ -4,10 +4,10 @@ build-backend = "maturin"
 
 [project]
 name = "cadl85"
-version = "0.1.0"
+version = "0.2.0"
 description = "Complete Anytime Decision Tree Learning"
 requires-python = ">=3.8"
-dependencies = ["numpy"]
+dependencies = ["numpy", "pandas"]
 
 [tool.maturin]
 features = ["python"]

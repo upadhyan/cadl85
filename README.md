@@ -14,10 +14,10 @@ Install by passing the wheel URL directly to pip. Pick the URL for your Python v
 
 ```bash
 # Python 3.10, Linux x86_64 (most compute clusters)
-pip install https://github.com/upadhyan/cadl85/releases/download/v0.1.0/cadl85-0.1.0-cp310-cp310-manylinux_2_34_x86_64.whl
+pip install https://github.com/upadhyan/cadl85/releases/download/v0.2.0/cadl85-0.2.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 ```
 
-Not sure which Python you have? Go to the [releases page](https://github.com/upadhyan/cadl85/releases/tag/v0.1.0), find the `.whl` file matching your Python version (`cp310` = 3.10, `cp311` = 3.11, etc.) and pass that URL to `pip install`.
+Not sure which Python you have? Go to the [releases page](https://github.com/upadhyan/cadl85/releases/tag/v0.2.0), find the `.whl` file matching your Python version (`cp310` = 3.10, `cp311` = 3.11, etc.) and pass that URL to `pip install`.
 
 > **Releasing a new version:** push a tag (`git tag v0.1.1 && git push origin v0.1.1`) and GitHub Actions will build and attach the wheels automatically. Update the version number in the URLs above accordingly.
 
@@ -35,6 +35,12 @@ print(model.statistics_)      # search stats: duration, cache_size, restarts, â€
 ```
 
 `X` and `y` accept numpy arrays, pandas DataFrames/Series, or any array-like. Labels can be any non-negative integers. Available heuristics: `"information_gain"` (default), `"gini"`, `"none"`.
+
+A self-contained end-to-end example is in [demo.py](demo.py) â€” it generates a synthetic binary dataset, fits a tree, prints predictions and search stats, and pretty-prints the learned tree structure.
+
+```bash
+python demo.py
+```
 
 To build from source (requires Rust):
 
