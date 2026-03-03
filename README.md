@@ -4,6 +4,17 @@ CADL8.5 is a **complete anytime framework** for decision tree learning that exte
 It quickly finds high-quality solutions and improves them over time, while still guaranteeing **optimal solutions**.
 Compared to DL8.5 and Blossom, CADL8.5 often solves **more instances to optimality** and performs at least as well as greedy baselines in early stages.
 
+## Citation 
+If you are using this repo, please cite the *original authors of the paper*
+```
+@article{kiossou2025generic,
+  title={A generic complete anytime beam search for optimal decision tree},
+  author={Kiossou, Harold Silvere and Nijssen, Siegfried and Schaus, Pierre},
+  journal={arXiv preprint arXiv:2508.06064},
+  year={2025}
+}
+```
+
 ---
 
 ## Python Installation
