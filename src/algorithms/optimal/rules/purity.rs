@@ -28,6 +28,12 @@ impl PurityRule {
 
 impl Rule for PurityRule {
     fn evaluate(&self, context: &RuleContext) -> RuleResult {
+        if !self.is_active() {
+            return RuleResult::continue_search();
+        }
+        if context.support == 0 {
+            return RuleResult::continue_search();
+        }
         let purity = 1.0 - context.error.min(context.leaf_error) / context.support as f64;
         if purity >= self.threshold {
             RuleResult::stop_with_bound(f64::INFINITY, Reason::RuleReason)
