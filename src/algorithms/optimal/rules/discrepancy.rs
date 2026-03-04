@@ -66,6 +66,9 @@ impl DiscrepancyRule {
 
 impl Rule for DiscrepancyRule {
     fn evaluate(&self, context: &RuleContext) -> RuleResult {
+        if !self.is_active() {
+            return RuleResult::continue_search();
+        }
         if context.discrepancy > self.budget {
             RuleResult::stop_with_bound(f64::INFINITY, Reason::RuleReason)
         } else {
