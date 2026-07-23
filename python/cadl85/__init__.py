@@ -24,6 +24,9 @@ from typing import Optional, Union
 import numpy as np
 import numpy.typing as npt
 
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.preprocessing import LabelEncoder
+
 from cadl85._cadl85 import CADL85 as _CADL85
 
 __all__ = ["CADL85"]
@@ -46,7 +49,28 @@ def _to_int64(arr: _ArrayLike, name: str) -> npt.NDArray[np.int64]:
     return out
 
 
-class CADL85:
+def _require_binary(arr: npt.NDArray[np.int64]) -> None:
+    """Raise ValueError unless every value in arr is 0 or 1."""
+    if not np.isin(arr, (0, 1)).all():
+        raise ValueError(
+            "X must be binary (values 0 and 1 only). CADL8.5 operates on "
+            "binarized features — apply QuantileBinarizer before fitting."
+        )
+
+
+def _tree_depth(node) -> int:
+    if node is None or "output" in node:
+        return 0
+    return 1 + max(_tree_depth(node["left"]), _tree_depth(node["right"]))
+
+
+def _n_leaves(node) -> int:
+    if node is None or "output" in node:
+        return 1
+    return _n_leaves(node["left"]) + _n_leaves(node["right"])
+
+
+class CADL85(ClassifierMixin, BaseEstimator):
     """Complete Anytime Decision Tree Learning classifier.
 
     Finds optimal binary decision trees using the DL8.5 branch-and-bound
@@ -85,6 +109,8 @@ class CADL85:
         ``"search_space_size"``.
     """
 
+    _estimator_type = "classifier"
+
     def __init__(
         self,
         max_depth: int = 4,
@@ -121,11 +147,29 @@ class CADL85:
             Fitted estimator (for method chaining).
         """
         X_arr = _to_int64(X, "X")
-        y_arr = _to_int64(y, "y")
         if X_arr.ndim != 2:
             raise ValueError(f"X must be 2-D, got shape {X_arr.shape}")
-        if y_arr.ndim != 1:
-            raise ValueError(f"y must be 1-D, got shape {y_arr.shape}")
+        _require_binary(X_arr)
+
+        # Extract raw labels (handle pandas Series) without forcing int64 — the
+        # engine only accepts integer labels, so we LabelEncode to 0..n-1 and
+        # map predictions back through self.le. For already-integer y this is a
+        # no-op round-trip.
+        try:
+            import pandas as pd  # optional dependency
+            if isinstance(y, pd.Series):
+                y = y.values
+        except ImportError:
+            pass
+        y_raw = np.asarray(y)
+        if y_raw.ndim != 1:
+            raise ValueError(f"y must be 1-D, got shape {y_raw.shape}")
+
+        self.le = LabelEncoder()
+        y_enc = self.le.fit_transform(y_raw)
+        self.classes_ = self.le.classes_
+        y_arr = np.ascontiguousarray(y_enc, dtype=np.int64)
+
         self._model.fit(X_arr, y_arr)
         return self
 
@@ -145,7 +189,9 @@ class CADL85:
         X_arr = _to_int64(X, "X")
         if X_arr.ndim != 2:
             raise ValueError(f"X must be 2-D, got shape {X_arr.shape}")
-        return self._model.predict(X_arr)
+        _require_binary(X_arr)
+        encoded = np.asarray(self._model.predict(X_arr))
+        return self.le.inverse_transform(encoded)
 
     # ------------------------------------------------------------------
     # Post-fit attributes (mirror the Rust accessors)
@@ -187,6 +233,33 @@ class CADL85:
         """
         import pandas as pd
         return pd.DataFrame(self._model.history_)
+
+    # ------------------------------------------------------------------
+    # sklearn benchmark introspection
+    # ------------------------------------------------------------------
+
+    def is_solved(self) -> bool:
+        """True when the search proved optimality.
+
+        CADL8.5's anytime restart loop stops only when the search space is
+        exhausted (provably optimal) or the time limit is hit. So not hitting
+        the timeout is equivalent to a completed, optimal search — the same
+        "optimal iff it finished before the clock" rule used for DPDT/GOSDT.
+        """
+        return not bool(self._model.has_timeout_)
+
+    def get_depth(self) -> int:
+        """Depth of the fitted tree (0 for a single-leaf tree)."""
+        return _tree_depth(self.tree_)
+
+    def get_n_leaves(self) -> int:
+        """Number of leaves in the fitted tree."""
+        return _n_leaves(self.tree_)
+
+    @property
+    def total_time_(self) -> float:
+        """Total search wall-clock time in seconds."""
+        return self._model.total_time_
 
     # ------------------------------------------------------------------
     # Dunder helpers

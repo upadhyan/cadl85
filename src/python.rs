@@ -101,7 +101,12 @@ macro_rules! run_dl85 {
 
         let tree = algo.tree().clone();
         let stats = algo.statistics().clone();
-        (tree, stats, history)
+        // Raw timing fact only — no search/optimality logic here. The restart
+        // loop stops when `reason != RuleReason` (search exhausted) OR the clock
+        // ran out; `has_timeout` records which. The optimality interpretation
+        // (`is_solved == !has_timeout`) lives in the Python wrapper.
+        let has_timeout = algo.time_is_exhausted();
+        (tree, stats, history, has_timeout)
     }};
 }
 
@@ -122,6 +127,7 @@ pub struct PyCadl85 {
     label_map: Vec<i64>,
     n_features_in: usize,
     n_samples: usize,
+    has_timeout: bool,
 }
 
 #[pymethods]
@@ -140,6 +146,7 @@ impl PyCadl85 {
             label_map: vec![],
             n_features_in: 0,
             n_samples: 0,
+            has_timeout: false,
         }
     }
 
@@ -168,7 +175,7 @@ impl PyCadl85 {
         self.n_features_in = x_arr.ncols();
         self.n_samples = x_arr.nrows();
 
-        let (tree, stats, history) = match self.heuristic.as_str() {
+        let (tree, stats, history, has_timeout) = match self.heuristic.as_str() {
             "gini_index" | "gini" => run_dl85!(
                 &mut cover,
                 self.n_samples,
@@ -199,6 +206,7 @@ impl PyCadl85 {
         self.statistics = Some(stats);
         self.history = history;
         self.label_map = label_map;
+        self.has_timeout = has_timeout;
 
         Ok(py.None())
     }
@@ -309,6 +317,25 @@ impl PyCadl85 {
     #[getter]
     fn n_features_in_(&self) -> usize {
         self.n_features_in
+    }
+
+    /// True when the search hit the time limit (did not run to completion).
+    #[getter]
+    fn has_timeout_(&self) -> PyResult<bool> {
+        if self.statistics.is_none() {
+            return Err(PyRuntimeError::new_err("Call fit() first"));
+        }
+        Ok(self.has_timeout)
+    }
+
+    /// Total search wall-clock time in seconds.
+    #[getter]
+    fn total_time_(&self) -> PyResult<f64> {
+        let stats = self
+            .statistics
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("Call fit() first"))?;
+        Ok(stats.duration)
     }
 
     fn __repr__(&self) -> String {
